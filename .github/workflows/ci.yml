@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Linux · Swift 6.0 · warnings as errors
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clean build (warnings are errors)
+        run: rm -rf .build && swift build -Xswiftc -warnings-as-errors
+      - name: Test
+        run: swift test
+
+  macos:
+    name: macOS · swift test + iOS Simulator build (incl. SwiftUI)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16.4
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
+      - name: Test (macOS, compiles OperationOwnershipUI)
+        run: swift test
+      - name: Build for iOS Simulator (generic destination, no device needed)
+        run: |
+          xcodebuild build \
+            -scheme OperationOwnership-Package \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO
