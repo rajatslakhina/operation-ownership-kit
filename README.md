@@ -6,7 +6,7 @@ A Swift concurrency runtime where every piece of work declares its **intent, own
 
 The flagship case is an AI feature. A streaming generation belongs to the user's *session*, not to the screen that started it. Leaving the screen doesn't orphan the stream or burn tokens twice. Coming back joins the stream that's already running. Signing out ends it. A draft upload marked must-finish still lands.
 
-Demo app: **[operation-ownership-demo-app](https://github.com/rajatslakhina/operation-ownership-demo-app)**. It is a separate iOS project that consumes this package as a version-pinned remote dependency and shows the three ownership models side by side.
+Demo app: **[operation-ownership-demo-app](https://github.com/rajatslakhina/operation-ownership-demo-app)**. It is a separate iOS project that consumes this package as a remote Swift package (up to next major from 1.0.0) and shows the three ownership models side by side.
 
 ---
 
@@ -84,6 +84,8 @@ op1 "Generate reply"  running · claims:
   - `.serialize` queues behind it (per-resource FIFO);
   - `.rejectIfBusy` refuses;
   - `.independent` ignores the resource.
+
+  Resource keys are a namespace across lanes. A `.coalesce` joiner joins the in-flight operation on whatever lane that operation runs, whatever lane the joiner declared.
 - **Lanes** (`llm`, `network`, `io`) have their own `maxConcurrent`/`maxQueued` limits, so a burst of thumbnails can't starve a generation.
 - **Budget**: admission reserves the estimate; streaming consumes it; ending the operation releases whatever was left unspent. Joiners reserve nothing, which is where coalescing saves money.
 
@@ -174,8 +176,8 @@ A resolution that arrives before its waiter is installed is buffered (`early`) r
 ### Limits (deliberately out of scope)
 
 - **No clock, so no deadlines.** Work that must finish should carry its own timeout. The ledger stays clock-free so it stays deterministic.
-- **The center is in-process.** Cross-process ownership (an extension plus the app) would need a lease, as in a fenced-lease design.
-- **Cost is whatever unit you report.** The lab uses tokens. The ledger doesn't price anything.
+- **The center is in-process.** Cross-process ownership (an extension plus the app) would need a fenced lease, for example a file lock with a fencing token.
+- **Cost is whatever unit you report.** The lab uses tokens. The ledger doesn't price anything. Reporting a negative amount is a programming error: `consume` throws, and the work stops.
 - **The view model recomputes on re-init.** `OwnershipLabView` builds its model in `State(initialValue:)`, which is cheap for the presets and harmless at the app root. Hoist the model if you embed the view deep in a frequently re-rendered hierarchy.
 - **The lab is a model, not a benchmark.** Its numbers show what each ownership policy does to the same script. They are not measurements of a real model or network.
 
@@ -202,7 +204,13 @@ for run in OwnershipLab.compare(.navigateAway) {
 
 ## Verification
 
-Locally, on Swift 6.0.3 for Linux: a clean `swift build -Xswiftc -warnings-as-errors` builds with 0 warnings, and `swift test` passes 62 tests with 0 failures. The CI results are being collected; this section is updated once both jobs report.
+Here is what has actually been run:
+
+- **Local (Swift 6.0.3, Linux):** after `rm -rf .build`, `swift build -Xswiftc -warnings-as-errors` builds with 0 warnings. `swift test` runs **62 tests with 0 failures**. Eleven hand-made ledger mutants were run during development, and the suite at the time killed each one. Examples: releasing claims when the requester closes, freeing slots at cancel time, pumping queues mid-call, and dropping the priority comparison.
+- **GitHub Actions** ([Actions tab](https://github.com/rajatslakhina/operation-ownership-kit/actions)): green on the `v1.0.0` commit.
+  - **Linux:** `swift:6.0` container, clean `swift build -Xswiftc -warnings-as-errors`, then `swift test`.
+  - **macOS 15:** Xcode 16.4, `swift test`, which also compiles the SwiftUI target. Then `xcodebuild build -scheme OperationOwnership-Package -destination 'generic/platform=iOS Simulator'`. This is a compile-only check; no device or simulator runtime is needed.
+- **Simulator:** this package has no app target. The companion demo app was built in Xcode 26.3 against the `1.0.0` tag resolved from GitHub, then launched and used on the iPhone 17 Pro Simulator (iOS 26.3). Its README has the screenshots.
 
 ## Install
 
